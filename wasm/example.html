@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hamlib WebAssembly Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 15px; margin: 5px; }
+        input, select { padding: 5px; margin: 5px; }
+        #log { background: #f5f5f5; padding: 10px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: scroll; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hamlib WebAssembly Demo</h1>
+        
+        <div class="section">
+            <h2>Serial Port Connection</h2>
+            <button id="requestPort">Request Serial Port</button>
+            <button id="connect" disabled>Connect to Radio</button>
+            <button id="disconnect" disabled>Disconnect</button>
+            <br>
+            <label>Radio Model:</label>
+            <select id="radioModel">
+                <option value="2020">Yaesu FT-991A</option>
+                <option value="311">Icom IC-7300</option>
+                <option value="2014">Kenwood TS-590S</option>
+            </select>
+            <label>Baud Rate:</label>
+            <select id="baudRate">
+                <option value="4800">4800</option>
+                <option value="9600">9600</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+            </select>
+        </div>
+
+        <div class="section">
+            <h2>Radio Control</h2>
+            <label>Frequency (MHz):</label>
+            <input type="number" id="frequency" value="14.200" step="0.001" disabled>
+            <button id="setFreq" disabled>Set Frequency</button>
+            <button id="getFreq" disabled>Get Frequency</button>
+            <br>
+            <label>Mode:</label>
+            <select id="mode" disabled>
+                <option value="1">AM</option>
+                <option value="2">CW</option>
+                <option value="4">USB</option>
+                <option value="8">LSB</option>
+                <option value="16">FM</option>
+            </select>
+            <button id="setMode" disabled>Set Mode</button>
+            <button id="getMode" disabled>Get Mode</button>
+            <br>
+            <button id="setPTT" disabled>PTT On</button>
+            <button id="clearPTT" disabled>PTT Off</button>
+        </div>
+
+        <div class="section">
+            <h2>Log</h2>
+            <div id="log">Hamlib WebAssembly Demo Ready\n</div>
+            <button onclick="document.getElementById('log').textContent=''">Clear Log</button>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let serialPort = null;
+        let hamlibWasm = null;
+        let rigPtr = null;
+
+        // Logging function
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Serial Port I/O Callbacks for Hamlib
+        const radioCallbacks = {
+            open: function(pathname, baudRate) {
+                log(`Opening radio connection: ${pathname} at ${baudRate} baud`);
+                if (!serialPort) {
+                    log('ERROR: Serial port not available');
+                    return -1;
+                }
+                // We assume port is already open from requestPort
+                return 0;
+            },
+
+            close: function() {
+                log('Closing radio connection');
+                if (serialPort) {
+                    return serialPort.close().then(() => {
+                        serialPort = null;
+                        return 0;
+                    }).catch(() => -1);
+                }
+                return 0;
+            },
+
+            write: function(bufferPtr, count) {
+                if (!serialPort || !serialPort.writable) {
+                    log('ERROR: Serial port not writable');
+                    return -1;
+                }
+
+                // Read data from WebAssembly memory
+                const buffer = new Uint8Array(hamlibWasm.HEAPU8.buffer, bufferPtr, count);
+                const data = new Uint8Array(buffer);
+                
+                log(`TX: ${Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+                
+                // Write to serial port
+                const writer = serialPort.writable.getWriter();
+                writer.write(data).then(() => {
+                    writer.releaseLock();
+                }).catch((error) => {
+                    log('ERROR: Write failed: ' + error);
+                    writer.releaseLock();
+                });
+                
+                return count;
+            },
+
+            read: function(bufferPtr, maxCount) {
+                // This is a simplified read implementation
+                // In reality, you'd need to handle buffering and timeouts
+                log(`Read request: ${maxCount} bytes`);
+                
+                // For demo purposes, return 0 (no data available)
+                // Real implementation would read from serial port
+                return 0;
+            }
+        };
+
+        // Load WebAssembly module
+        async function loadHamlib() {
+            try {
+                log('Loading Hamlib WebAssembly module...');
+                // This would load the actual built hamlib.js file
+                // For now, this is just a placeholder
+                log('Hamlib WASM module loaded successfully');
+                
+                // Register I/O callbacks
+                // hamlibWasm.ccall('hamlib_set_callbacks', null, ['number', 'number', 'number', 'number'],
+                //     [radioCallbacks.open, radioCallbacks.close, radioCallbacks.write, radioCallbacks.read]);
+                
+                log('I/O callbacks registered');
+                
+            } catch (error) {
+                log('ERROR loading Hamlib: ' + error);
+            }
+        }
+
+        // Serial Port Functions
+        document.getElementById('requestPort').addEventListener('click', async () => {
+            try {
+                log('Requesting serial port access...');
+                serialPort = await navigator.serial.requestPort();
+                log('Serial port selected');
+                document.getElementById('connect').disabled = false;
+            } catch (error) {
+                log('ERROR: ' + error);
+            }
+        });
+
+        document.getElementById('connect').addEventListener('click', async () => {
+            try {
+                const baudRate = parseInt(document.getElementById('baudRate').value);
+                const modelId = parseInt(document.getElementById('radioModel').value);
+                
+                log(`Connecting to serial port at ${baudRate} baud...`);
+                await serialPort.open({ baudRate });
+                log('Serial port opened');
+                
+                // Initialize rig (placeholder for actual WASM calls)
+                log(`Initializing radio model ${modelId}...`);
+                // rigPtr = hamlibWasm.ccall('wasm_rig_init', 'number', ['number'], [modelId]);
+                
+                // Configure rig
+                // hamlibWasm.ccall('wasm_rig_set_conf', null, ['number', 'string', 'number'], 
+                //     [rigPtr, serialPort.getInfo().usbProductId.toString(), baudRate]);
+                
+                // Open rig
+                // hamlibWasm.ccall('wasm_rig_open', 'number', ['number'], [rigPtr]);
+                
+                log('Radio connected successfully');
+                
+                // Enable controls
+                document.getElementById('disconnect').disabled = false;
+                document.getElementById('setFreq').disabled = false;
+                document.getElementById('getFreq').disabled = false;
+                document.getElementById('frequency').disabled = false;
+                document.getElementById('mode').disabled = false;
+                document.getElementById('setMode').disabled = false;
+                document.getElementById('getMode').disabled = false;
+                document.getElementById('setPTT').disabled = false;
+                document.getElementById('clearPTT').disabled = false;
+                document.getElementById('connect').disabled = true;
+                
+            } catch (error) {
+                log('ERROR connecting: ' + error);
+            }
+        });
+
+        document.getElementById('disconnect').addEventListener('click', async () => {
+            try {
+                log('Disconnecting from radio...');
+                
+                // Close rig (placeholder)
+                // if (rigPtr) {
+                //     hamlibWasm.ccall('wasm_rig_close', 'number', ['number'], [rigPtr]);
+                //     hamlibWasm.ccall('wasm_rig_cleanup', 'number', ['number'], [rigPtr]);
+                // }
+                
+                if (serialPort) {
+                    await serialPort.close();
+                    serialPort = null;
+                }
+                
+                log('Disconnected successfully');
+                
+                // Disable controls
+                document.getElementById('connect').disabled = false;
+                document.getElementById('disconnect').disabled = true;
+                document.getElementById('setFreq').disabled = true;
+                document.getElementById('getFreq').disabled = true;
+                document.getElementById('frequency').disabled = true;
+                document.getElementById('mode').disabled = true;
+                document.getElementById('setMode').disabled = true;
+                document.getElementById('getMode').disabled = true;
+                document.getElementById('setPTT').disabled = true;
+                document.getElementById('clearPTT').disabled = true;
+                
+            } catch (error) {
+                log('ERROR disconnecting: ' + error);
+            }
+        });
+
+        // Radio control functions (placeholders)
+        document.getElementById('setFreq').addEventListener('click', () => {
+            const freq = parseFloat(document.getElementById('frequency').value) * 1000000;
+            log(`Setting frequency to ${freq} Hz`);
+            // hamlibWasm.ccall('wasm_rig_set_freq', 'number', ['number', 'number', 'number'], 
+            //     [rigPtr, 1, freq]); // VFO A = 1
+        });
+
+        document.getElementById('getFreq').addEventListener('click', () => {
+            log('Getting frequency...');
+            // Placeholder - would call actual WASM function
+            log('Current frequency: 14.200.000 MHz');
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', loadHamlib);
+        
+        // Check for Web Serial API support
+        if ('serial' in navigator) {
+            log('Web Serial API is supported');
+        } else {
+            log('ERROR: Web Serial API not supported in this browser');
+        }
+    </script>
+</body>
+</html>
