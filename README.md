@@ -43,18 +43,57 @@ Currently includes popular models:
 ## Building
 
 ### Prerequisites
+- [Docker](https://www.docker.com/) installed
+- Docker Compose (included with Docker Desktop)
+
+### Docker Build (Recommended)
+
+The easiest way to build is using Docker, which provides a consistent build environment across all platforms:
+
+```bash
+# Build the WebAssembly module
+docker-compose build hamlib-wasm-build
+docker-compose run --rm hamlib-wasm-build
+
+# Or combine both steps
+docker-compose up hamlib-wasm-build
+```
+
+This produces:
+- `wasm/dist/hamlib.js` - JavaScript glue code
+- `wasm/dist/hamlib.wasm` - WebAssembly module
+
+### Testing the Build
+
+Serve the example application:
+```bash
+# Start web server on http://localhost:8080
+docker-compose up hamlib-wasm-serve
+```
+
+Then open http://localhost:8080/example.html in your browser.
+
+### Development Mode
+
+For interactive development and debugging:
+```bash
+# Start development container with shell access
+docker-compose run --rm hamlib-wasm-dev
+```
+
+### Local Build (Alternative)
+
+If you prefer to install tools locally:
+
+#### Prerequisites
 - [Emscripten](https://emscripten.org/) toolchain installed
 - Make
 
-### Build Steps
+#### Build Steps
 ```bash
 cd wasm
 make all
 ```
-
-This produces:
-- `dist/hamlib.js` - JavaScript glue code
-- `dist/hamlib.wasm` - WebAssembly module
 
 ## Usage
 

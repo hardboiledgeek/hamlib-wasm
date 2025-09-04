@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  hamlib-wasm-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hamlib-wasm-builder
+    volumes:
+      # Mount the wasm directory to get build outputs
+      - ./wasm/build:/src/wasm/build
+      - ./wasm/dist:/src/wasm/dist
+    working_dir: /src
+    command: make -C wasm all
+    
+  # Development container for interactive building/debugging  
+  hamlib-wasm-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hamlib-wasm-dev
+    volumes:
+      - .:/src
+    working_dir: /src
+    command: /bin/bash
+    stdin_open: true
+    tty: true
+
+  # Web server for testing the built module
+  hamlib-wasm-serve:
+    image: nginx:alpine
+    container_name: hamlib-wasm-server
+    ports:
+      - "8080:80"
+    volumes:
+      - ./wasm:/usr/share/nginx/html
+    depends_on:
+      - hamlib-wasm-build
