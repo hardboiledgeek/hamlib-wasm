@@ -1,0 +1,48 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies on Linux
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt install libusb-1.0-0-dev
+        sudo apt install libgpiod-dev
+        sudo apt install grep
+    - name: Install dependencies on macOS
+      if: runner.os == 'macOS'
+      run: |
+        brew install autoconf
+        brew install automake
+        brew install libtool
+        brew install grep
+    - name: bootstrap
+      run: ./bootstrap
+    - name: Suppress -Winitializer-overrides on macOS
+      if: runner.os == 'macOS'
+      run: |
+        export CFLAGS="$CFLAGS -Wno-initializer-overrides"
+        export CXXFLAGS="$CXXFLAGS -Wno-initializer-overrides"
+    - name: README Debug
+      run: grep README Makefile.am
+    - name: configure
+      run: ./configure
+    - name: make
+      run: make -j 4
+    - name: make check
+      run: make check
+    - name: make distcheck
+      run: make distcheck
+
