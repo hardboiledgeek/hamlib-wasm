@@ -8,19 +8,78 @@ This project creates a WebAssembly module that exposes Hamlib's radio control fu
 
 ## Architecture
 
+### High-Level Architecture
+
+```mermaid
+graph TD
+    A[JavaScript Web Application] -->|Web Serial API| B[Browser Serial Port]
+    A -->|Function calls| C[WebAssembly Hamlib Module]
+    C -->|I/O callbacks| A
+    C -->|Protocol commands| D[Real Radio Backend]
+    D -->|FT-991A, IC-7300, etc.| E[Amateur Radio Hardware]
+    B -->|Serial data| E
 ```
-JavaScript Application
-    ↓ (Web Serial API)
-WebAssembly Hamlib Module
-    ↓ (JavaScript callbacks)
-Real Radio Backend (FT-991A, IC-7300, etc.)
+
+### Detailed Component Architecture
+
+```mermaid
+graph TB
+    subgraph "Browser Environment"
+        WA[Web Application]
+        WSA[Web Serial API]
+        WS[WebAssembly Module]
+    end
+    
+    subgraph "WebAssembly Module"
+        WB[WASM Backend<br/>wasm_backend.c]
+        WBI[WASM Bindings<br/>wasm_bindings.c] 
+        HL[Hamlib Core]
+        RB[Radio Backends<br/>FT-991A, IC-7300, etc.]
+    end
+    
+    subgraph "Hardware"
+        R[Amateur Radio]
+    end
+    
+    WA -->|rig_set_freq(), etc.| WBI
+    WBI -->|Function exports| HL
+    HL -->|Standard calls| RB
+    RB -->|write_block(), read_block()| WB
+    WB -->|JS callbacks| WA
+    WA -->|Serial I/O| WSA
+    WSA -->|USB/Serial| R
+```
+
+### I/O Interception Flow
+
+```mermaid
+sequenceDiagram
+    participant JS as JavaScript App
+    participant WB as WASM Bindings
+    participant HL as Hamlib Core
+    participant BE as Radio Backend
+    participant IO as I/O Intercept
+    participant Serial as Web Serial
+    
+    JS->>+WB: rig_set_freq(14200000)
+    WB->>+HL: Call Hamlib function
+    HL->>+BE: Backend-specific command
+    BE->>+IO: write_block("FA014200000;")
+    IO->>+JS: writeCallback(buffer, length)
+    JS->>+Serial: port.write(data)
+    Serial-->>-JS: Success
+    JS-->>-IO: Return bytes written
+    IO-->>-BE: Success
+    BE-->>-HL: Command completed
+    HL-->>-WB: Return result
+    WB-->>-JS: Frequency set successfully
 ```
 
 ### Key Components
 
 - **WASM Backend** (`wasm/wasm_backend.c`): Intercepts Hamlib's I/O operations and routes them to JavaScript callbacks
 - **WASM Bindings** (`wasm/wasm_bindings.c`): Emscripten interface that exports Hamlib functions to JavaScript
-- **Build System** (`wasm/Makefile`): Emscripten-based build configuration
+- **Build System** (`wasm/Makefile`): Emscripten-based build configuration  
 - **Demo Application** (`wasm/example.html`): Example HTML page showing usage
 
 ## Features
